@@ -1,13 +1,9 @@
-import com.sun.net.httpserver.HttpContext;
-import com.sun.net.httpserver.HttpServer;
 import org.xbill.DNS.MulticastDNSUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.InetSocketAddress;
-import java.util.concurrent.Executors;
 
 /**
  * Created by german on 06.03.17.
@@ -17,7 +13,7 @@ public class Main {
     public static void main(String[] args) throws IOException {
 //        HttpServer server = HttpServer.create();
 //        server.bind(new InetSocketAddress(8765), 0);
-//        HttpContext context = server.createContext("/lower", new ToLowerCaseHttpHandler());
+//        HttpContext context = server.createContext("/lower", new JSHttpHandler());
 //        server.start();
 //        System.out.println("!!!");
 //        server.setExecutor();
@@ -55,7 +51,7 @@ public class Main {
             }
             case "consumer": {
                 int port = Integer.parseInt(args[1]);
-                Consumer consumer = new Consumer(port, host);
+                Consumer consumer = new JSConsumer(port, host);
                 consumer.registerServiceListener();
                 while (true) {
                     try {

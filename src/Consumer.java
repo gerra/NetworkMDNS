@@ -18,14 +18,16 @@ public class Consumer extends MdnsService {
     }
 
     private List<Object> browseIds = new ArrayList<>();
-    private List<ServiceInstance> producers = new ArrayList<>();
+    protected List<ServiceInstance> producers = new ArrayList<>();
 
     public void registerServiceListener() throws IOException {
         Object id = multicastDNSService.startServiceDiscovery(new Browse("_http._tcp.local."), new DNSSDListener() {
             @Override
             public void serviceDiscovered(Object o, ServiceInstance serviceInstance) {
                 System.out.println("found: " + serviceInstance.getName());
-                if (serviceInstance.getName().toString().startsWith("producer")) {
+                if (//serviceInstance.getName().toString().startsWith("producer") ||
+                        "producer".equals(serviceInstance.getTextAttributes().get("type"))) {
+                    System.out.println("added");
                     producers.add(serviceInstance);
                 }
             }
