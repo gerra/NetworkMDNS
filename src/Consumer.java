@@ -2,14 +2,13 @@ import net.posick.mDNS.Browse;
 import net.posick.mDNS.DNSSDListener;
 import net.posick.mDNS.ServiceInstance;
 import org.xbill.DNS.Message;
+import sun.net.www.protocol.http.HttpURLConnection;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.SocketChannel;
+import java.io.InputStream;
+import java.net.URL;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -51,47 +50,24 @@ public class Consumer extends MdnsService {
     }
 
     public void requestFile(String filename) {
-//        producers.clear();
-//        try {
-//            registerServiceListener();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        try {
-//            Thread.sleep(1000);
-//        } catch (InterruptedException ignored) {}
-
-
         System.out.println("Trying to request " + filename);
-        byte[] query = ("request " + filename).getBytes();
-        for (ServiceInstance consumer : producers) {
+        File file = new File("./" + filename);
+        for (ServiceInstance producer : producers) {
             try {
-                InetSocketAddress socketAddress = new InetSocketAddress(consumer.getAddresses()[0], consumer.getPort());
-                SocketChannel serverChannel = SocketChannel.open(socketAddress);
-                serverChannel.write(ByteBuffer.wrap(query));
-
-                FileOutputStream fos = null;
-                try {
-                    File file = new File("./" + filename);
-                    file.delete();
-                    file.createNewFile();
-                    fos = new FileOutputStream(file);
-                    long position = 0;
-                    long transferred;
-                    FileChannel fileChannel = fos.getChannel();
-                    while ((transferred = fileChannel.transferFrom(serverChannel, position, 256)) > 0) {
-                        position += transferred;
-                        System.out.println("received " + transferred + ", total = " + position);
-                    }
-                } catch (IOException e) {
-                    System.err.println("no found file");
-                } finally {
-                    if (fos != null) {
-                        fos.close();
-                    }
-                }
+                URL url = new URL("http://" +
+                        producer.getAddresses()[0].getCanonicalHostName() + ":" + producer.getPort() +
+                        "/" + filename);
+                HttpURLConnection httpConnection = (HttpURLConnection) url.openConnection();
+                httpConnection.setRequestMethod("GET");
+                file.delete();
+                httpConnection.connect();
+                InputStream inputStream = httpConnection.getInputStream();
+                Files.copy(inputStream, file.toPath());
+                inputStream.close();
+                break;
             } catch (IOException e) {
                 e.printStackTrace();
+                file.delete();
             }
         }
     }

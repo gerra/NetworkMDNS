@@ -16,6 +16,7 @@ public class FileSendHandler implements HttpHandler {
     @Override
     public void handle(HttpExchange httpExchange) throws IOException {
         String filename = httpExchange.getRequestURI().getPath().substring(1);
+        System.out.println("sending " + filename);
         File fileToSend = new File(directory, filename);
         httpExchange.sendResponseHeaders(200, fileToSend.length());
         OutputStream outputStream = httpExchange.getResponseBody();
