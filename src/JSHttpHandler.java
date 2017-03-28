@@ -20,10 +20,34 @@ import java.util.List;
 
 public class JSHttpHandler implements HttpHandler {
 
+    private Gson gson;
     private JSConsumer jsConsumer;
 
     public JSHttpHandler(JSConsumer jsConsumer) {
         this.jsConsumer = jsConsumer;
+        gson = new Gson();
+    }
+
+    private Observable<String> getResponseObservable(String arg, URL url, JSInfo jsInfo) {
+        return Observable.fromCallable(() -> {
+            System.out.println(Thread.currentThread());
+            JSInfo jsInfoForProducer = new JSInfo(arg, jsInfo.map);
+            String jsInfoForProducerAsJson = gson.toJson(jsInfoForProducer);
+            try {
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setDoInput(true);
+                connection.setDoOutput(true);
+                connection.setRequestMethod("POST");
+                connection.addRequestProperty("Content-Type", "application/json");
+                connection.connect();
+                connection.getOutputStream().write(jsInfoForProducerAsJson.getBytes());
+                Result response = gson.fromJson(new InputStreamReader(connection.getInputStream()), Result.class);
+                return response.result;
+            } catch (Throwable t) {
+                t.printStackTrace();
+                throw t;
+            }
+        }).subscribeOn(Schedulers.newThread());
     }
 
     @Override
@@ -36,31 +60,34 @@ public class JSHttpHandler implements HttpHandler {
             int subLength = (jsInfo.data.length() + urls.size() - 1) / urls.size();
             List<String> args = Arrays.asList(jsInfo.data.split("(?<=\\G.{" + subLength + "})"));
 
-            List<Observable<String>> observables = new ArrayList<>();
-            Observable.range(0, 2)
-                    .map(i -> Observable.defer(() -> Observable.fromCallable(() -> {
-                        System.out.println(Thread.currentThread());
-                        JSInfo jsInfoForProducer = new JSInfo(args.get(i), jsInfo.map);
-                        String jsInfoForProducerAsJson = gson.toJson(jsInfoForProducer);
-                        try {
-                            URL url = urls.get(i);
-                            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                            connection.setDoInput(true);
-                            connection.setDoOutput(true);
-                            connection.setRequestMethod("POST");
-                            connection.addRequestProperty("Content-Type", "application/json");
-                            connection.connect();
-                            connection.getOutputStream().write(jsInfoForProducerAsJson.getBytes());
-                            Result response = gson.fromJson(new InputStreamReader(connection.getInputStream()), Result.class);
-                            return response.result;
-                        } catch (Throwable t) {
-                            t.printStackTrace();
-                            throw t;
-                        }
-                    }).subscribeOn(Schedulers.newThread())
-            )).toList().toBlocking().subscribe(observables::addAll);
+            Observable<Observable<String>> observables = Observable.range(0, args.size())
+                    .map(i -> getResponseObservable(args.get(i), urls.get(i), jsInfo));
 
+            Subscriber<List<String>> subscriber = new Subscriber<List<String>>() {
+                @Override
+                public void onCompleted() {
+                    System.out.println("onCompleted()");
+                }
 
+                @Override
+                public void onError(Throwable throwable) {
+                    throwable.printStackTrace();
+                }
+
+                @Override
+                public void onNext(List<String> strings) {
+                    try {
+                        ScriptEngine engine = new ScriptEngineManager().getEngineByName("nashorn");
+                        engine.eval(jsInfo.reduce);
+                        Invocable invocable = (Invocable) engine;
+                        String result = (String) invocable.invokeFunction("reduce", strings);
+                        httpExchange.sendResponseHeaders(200, result.length());
+                        httpExchange.getResponseBody().write(result.getBytes());
+                    } catch (ScriptException | NoSuchMethodException | IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            };
             Observable.zip(observables, objects -> {
                 List<String> strings = new ArrayList<>();
                 for (Object object : objects) {
@@ -69,32 +96,8 @@ public class JSHttpHandler implements HttpHandler {
                     }
                 }
                 return strings;
-            }).toBlocking()
-                    .subscribe(new Subscriber<List<String>>() {
-                        @Override
-                        public void onCompleted() {
-                            System.out.println("onCompleted()");
-                        }
+            }).toBlocking().subscribe(subscriber);
 
-                        @Override
-                        public void onError(Throwable throwable) {
-                            throwable.printStackTrace();
-                        }
-
-                        @Override
-                        public void onNext(List<String> strings) {
-                            try {
-                                ScriptEngine engine = new ScriptEngineManager().getEngineByName("nashorn");
-                                engine.eval(jsInfo.reduce);
-                                Invocable invocable = (Invocable) engine;
-                                String result = (String) invocable.invokeFunction("reduce", strings);
-                                httpExchange.sendResponseHeaders(200, result.length());
-                                httpExchange.getResponseBody().write(result.getBytes());
-                            } catch (ScriptException | NoSuchMethodException | IOException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    });
             httpExchange.close();
         } catch (Exception e) {
             e.printStackTrace();
